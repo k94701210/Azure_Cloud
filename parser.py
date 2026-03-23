@@ -17,3 +17,6 @@ ts = ms.daily(stations, START, END)
 df = ms.interpolate(ts, POINT).fetch()
 
 print(df)
+
+
+test
