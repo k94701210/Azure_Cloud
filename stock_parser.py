@@ -1,47 +1,93 @@
 import pymssql
-import random
 import time
+import yfinance as yf
+import schedule
+from datetime import datetime
 
-"""
-使用 pymssql 對資料庫進行連接
-"""
+# =========================
+# DB 設定
+# =========================
 server = "k94701210.database.windows.net"
 database = "free-sql-db-2916645"
 user = "dbeng"
-password = "Ab123456"   
-'''密碼洩漏問題'''
+password = "Ab123456"
 
+# =========================
+# SQL（不包含 IDENTITY）
+# =========================
 INS_SQL = """
-    INSERT into dbo.stocks(sid,sname,price) 
-    VALUES (
-        %s,
-        %s,
-        %d
-    )
+INSERT INTO dbo.stocks 
+(stock_id, open_price, high_price, low_price, close_price, volume, dt)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
 """
-try:
-    connect = pymssql.connect(server, user, password, database)
-    cursor = connect.cursor()
 
+# =========================
+# DB 連線（含 retry）
+# =========================
+def get_connection():
+    for i in range(3):
+        try:
+            return pymssql.connect(server, user, password, database)
+        except Exception as e:
+            print(f"DB連線失敗，第{i+1}次重試...")
+            time.sleep(5)
+    raise Exception("DB連線失敗（已重試3次）")
 
-    for i in range(1,30):
-        # 產生亂數 介於( 1850~ 1905)
-        rp = random.randint(1850,1905)
-        cursor.execute(INS_SQL, ("2330","TSMC",rp))
-        # pymssql 預設設定 autocommit = false
-        connect.commit()
-        print(f'第{i}次擷取,金額 {rp}')
-        if( i < 30 ):  
-            time.sleep(3)   # 如果還在回圈內就 休眠 5秒
+# =========================
+# 主工作（抓資料 + 寫入DB）
+# =========================
+def job():
+    try:
+        print("開始抓資料...")
 
+        tick = yf.Ticker("2330.TW")
+        info = tick.fast_info
 
+        # 防呆（有時會是 None）
+        open_price = info.open or 0
+        high = info.day_high or 0
+        low = info.day_low or 0
+        close = info.last_price or 0
+        volume = info.last_volume or 0
 
-    print("資料寫入完畢")
-    cursor.close()
-    connect.close()
+        now = datetime.now()
 
+        print(f"開盤:{open_price}, 高:{high}, 低:{low}, 收:{close}, 成交量:{volume}")
 
+        # DB寫入
+        conn = get_connection()
+        cursor = conn.cursor()
 
+        cursor.execute(INS_SQL, (
+            2330,
+            float(open_price),
+            float(high),
+            float(low),
+            float(close),
+            int(volume),
+            now
+        ))
 
-except Exception as e: 
-    print(f'連線失敗: 原因{e}')
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        print("寫入成功")
+
+    except Exception as e:
+        print(f"錯誤: {e}")
+
+# =========================
+# 排程（下午2點）
+# =========================
+schedule.every().day.at("14:00").do(job)
+
+print("排程啟動...")
+
+# =========================
+# 持續執行
+# =========================
+while True:
+    schedule.run_pending()
+    time.sleep(1)
