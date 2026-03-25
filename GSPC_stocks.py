@@ -16,7 +16,7 @@ password = "Ab123456"
 # SQL（不包含 IDENTITY）
 # =========================
 INS_SQL = """
-INSERT INTO dbo.stocks 
+INSERT INTO dbo.GSPC_stocks
 (stock_id, open_price, high_price, low_price, close_price, volume, dt)
 VALUES (%s, %s, %s, %s, %s, %s, %s)
 """
@@ -40,7 +40,7 @@ def job():
     try:
         print("開始抓資料...")
 
-        tick = yf.Ticker("2330.TW")
+        tick = yf.Ticker("^GSPC")
         info = tick.fast_info
 
         # 防呆（有時會是 None）
@@ -59,7 +59,7 @@ def job():
         cursor = conn.cursor()
 
         cursor.execute(INS_SQL, (
-            2330,
+            "GSPC",
             float(open_price),
             float(high),
             float(low),
@@ -81,7 +81,7 @@ def job():
 # =========================
 # 排程（下午2點）
 # =========================
-schedule.every().day.at("14:00").do(job)
+schedule.every().day.at("11:11").do(job)
 
 print("排程啟動...")
 
