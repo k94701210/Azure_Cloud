@@ -3,6 +3,7 @@ import time
 import yfinance as yf
 import schedule
 from datetime import datetime
+import threading
 
 # =========================
 # DB 設定
@@ -13,37 +14,41 @@ user = "dbeng"
 password = "Ab123456"
 
 # =========================
-# SQL（不包含 IDENTITY）
+# SQL（單一表）
 # =========================
 INS_SQL = """
-INSERT INTO dbo.GSPC_stocks
+INSERT INTO dbo.stocks
 (stock_id, open_price, high_price, low_price, close_price, volume, dt)
 VALUES (%s, %s, %s, %s, %s, %s, %s)
 """
 
 # =========================
-# DB 連線（含 retry）
+# DB 連線（retry）
 # =========================
 def get_connection():
     for i in range(3):
         try:
             return pymssql.connect(server, user, password, database)
-        except Exception as e:
+        except:
             print(f"DB連線失敗，第{i+1}次重試...")
             time.sleep(5)
-    raise Exception("DB連線失敗（已重試3次）")
+    raise Exception("DB連線失敗")
 
 # =========================
-# 主工作（抓資料 + 寫入DB）
+# 單一股票處理
 # =========================
-def job():
+def fetch_and_save(symbol, stock_id):
     try:
-        print("開始抓資料...")
+        print(f"開始抓 {symbol}...")
 
-        tick = yf.Ticker("^GSPC")
+        tick = yf.Ticker(symbol)
         info = tick.fast_info
 
-        # 防呆（有時會是 None）
+        # 防呆
+        if info.last_price is None:
+            print(f"{symbol} 今日無資料（可能休市）")
+            return
+
         open_price = info.open or 0
         high = info.day_high or 0
         low = info.day_low or 0
@@ -52,14 +57,13 @@ def job():
 
         now = datetime.now()
 
-        print(f"開盤:{open_price}, 高:{high}, 低:{low}, 收:{close}, 成交量:{volume}")
+        print(f"{symbol} → 開:{open_price}, 高:{high}, 低:{low}, 收:{close}")
 
-        # DB寫入
         conn = get_connection()
         cursor = conn.cursor()
 
         cursor.execute(INS_SQL, (
-            "GSPC",
+            stock_id,
             float(open_price),
             float(high),
             float(low),
@@ -73,10 +77,38 @@ def job():
         cursor.close()
         conn.close()
 
-        print("寫入成功")
+        print(f"{symbol} 寫入成功")
 
     except Exception as e:
-        print(f"錯誤: {e}")
+        # 防止 UNIQUE constraint 報錯炸掉
+        if "duplicate" in str(e).lower():
+            print(f"{symbol} 今日資料已存在")
+        else:
+            print(f"{symbol} 錯誤: {e}")
+
+# =========================
+# 多執行緒 job
+# =========================
+def job():
+    print("開始多股票抓取...")
+
+    stocks = [
+        ("2330.TW", "2330"),
+        ("^GSPC", "GSPC"),
+        ("AAPL", "AAPL")
+    ]
+
+    threads = []
+
+    for symbol, sid in stocks:
+        t = threading.Thread(target=fetch_and_save, args=(symbol, sid))
+        threads.append(t)
+        t.start()
+
+    for t in threads:
+        t.join()
+
+    print("全部完成")
 
 # =========================
 # 排程（下午2點）
