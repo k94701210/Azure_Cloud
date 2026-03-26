@@ -81,7 +81,7 @@ def job():
 # =========================
 # 排程（下午2點）
 # =========================
-schedule.every().day.at("14:00").do(job)
+schedule.every(30).minutes.do(job)
 
 print("排程啟動...")
 
