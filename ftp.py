@@ -17,3 +17,22 @@ ftp.cwd('pos')
 files = ftp.nlst()
 print("目錄下的檔案：", files)
 
+if len(files) == 0:
+    print("目錄下沒有檔案")
+else:
+    print("目錄下的檔案：", files)
+for file in files:
+    with open(file, 'wb') as f:
+        ftp.retrbinary('RETR ' + file, f.write)
+
+
+
+
+
+
+
+
+
+
+
+
